@@ -21,6 +21,7 @@ const ICON: Record<Severity, string> = {
   error: '❌',
   warn:  '⚠ ',
   ok:    '✓ ',
+  info:  'ℹ ',
 };
 
 const CATEGORY_LABEL: Record<Finding['category'], string> = {
@@ -40,6 +41,7 @@ export function renderTable(result: ScanResult): string {
 
   const errors   = findings.filter((f) => f.severity === 'error');
   const warnings = findings.filter((f) => f.severity === 'warn');
+  const info     = findings.filter((f) => f.severity === 'info');
   const passed   = findings.filter((f) => f.severity === 'ok');
 
   const lines: string[] = [];
@@ -81,19 +83,22 @@ export function renderTable(result: ScanResult): string {
   }
 
   renderSection(errors,   'Errors',   pc.red,    false);
+  renderSection(info,     'Setup',    pc.cyan,   false);
   renderSection(warnings, 'Warnings', pc.yellow, false);
   renderSection(passed,   'Passed',   pc.green,  true);
 
   // ── Summary ──────────────────────────────────────────────────────────────────
   const errCount  = errors.length;
   const warnCount = warnings.length;
+  const infoCount = info.length;
   const okCount   = passed.length;
 
-  if (errCount === 0 && warnCount === 0) {
+  if (errCount === 0 && warnCount === 0 && infoCount === 0) {
     lines.push(pc.green(pc.bold(`✓ All ${okCount} checks passed.`)));
   } else {
     const parts: string[] = [];
     if (errCount)  parts.push(pc.red(`${errCount} error${errCount > 1 ? 's' : ''}`));
+    if (infoCount) parts.push(pc.cyan(`${infoCount} setup action${infoCount > 1 ? 's' : ''}`));
     if (warnCount) parts.push(pc.yellow(`${warnCount} warning${warnCount > 1 ? 's' : ''}`));
     if (okCount)   parts.push(pc.green(`${okCount} passed`));
 

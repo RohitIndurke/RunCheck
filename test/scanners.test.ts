@@ -372,7 +372,7 @@ describe('diff — lockfile newer than node_modules', () => {
       envExampleKeys: [],
       dockerRequired: false,
       requiredPorts: [],
-      packageJsonPath: null,
+      packageJsonPath: '/fake/package.json',  // must be non-null to reach lockfile check
       isMonorepo: false,
       pmEngineRange: null,
     };
@@ -695,3 +695,83 @@ describe('diff — verbose mode', () => {
     expect(nodeFinding?.message).not.toContain('from');
   });
 });
+
+// ─── diff — dependency check ──────────────────────────────────────────────────
+
+describe('diff — dependency check', () => {
+  const makeReqs = (pm: ProjectRequirements['packageManager']): ProjectRequirements => ({
+    nodeRange: null,
+    nodeRangeSource: null,
+    packageManager: pm,
+    lockfilePath: pm ? `/fake/${pm}-lock` : null,
+    ambiguousLockfiles: pm ? [`/fake/${pm}-lock`] : [],
+    envExampleKeys: [],
+    dockerRequired: false,
+    requiredPorts: [],
+    packageJsonPath: '/fake/package.json',
+    isMonorepo: false,
+    pmEngineRange: null,
+  });
+
+  const baseEnv = (nodeModulesExists: boolean): LocalEnvironment => ({
+    nodeVersion: 'v20.0.0',
+    packageManagerVersion: '10.0.0',
+    nodeModulesExists,
+    lockfileNewerThanModules: false,
+    envKeys: [],
+    envFileExists: false,
+    dockerCliAvailable: false,
+    dockerDaemonRunning: false,
+    boundPorts: [],
+  });
+
+  it('node_modules exists → ok severity', () => {
+    const findings = diffRequirementsVsEnvironment(makeReqs('pnpm'), baseEnv(true));
+    const f = findings.find((x) => x.category === 'deps');
+    expect(f?.severity).toBe('ok');
+  });
+
+  it('node_modules missing + pnpm → info with "pnpm install" fix', () => {
+    const findings = diffRequirementsVsEnvironment(makeReqs('pnpm'), baseEnv(false));
+    const f = findings.find((x) => x.category === 'deps');
+    expect(f?.severity).toBe('info');
+    expect(f?.fix).toBe('pnpm install');
+  });
+
+  it('node_modules missing + npm → info with "npm install" fix', () => {
+    const findings = diffRequirementsVsEnvironment(makeReqs('npm'), baseEnv(false));
+    const f = findings.find((x) => x.category === 'deps');
+    expect(f?.severity).toBe('info');
+    expect(f?.fix).toBe('npm install');
+  });
+
+  it('node_modules missing + yarn → info with "yarn install" fix', () => {
+    const findings = diffRequirementsVsEnvironment(makeReqs('yarn'), baseEnv(false));
+    const f = findings.find((x) => x.category === 'deps');
+    expect(f?.severity).toBe('info');
+    expect(f?.fix).toBe('yarn install');
+  });
+
+  it('node_modules missing + bun → info with "bun install" fix', () => {
+    const findings = diffRequirementsVsEnvironment(makeReqs('bun'), baseEnv(false));
+    const f = findings.find((x) => x.category === 'deps');
+    expect(f?.severity).toBe('info');
+    expect(f?.fix).toBe('bun install');
+  });
+
+  it('node_modules missing + no PM → info with no fix hint', () => {
+    const findings = diffRequirementsVsEnvironment(makeReqs(null), baseEnv(false));
+    const f = findings.find((x) => x.category === 'deps');
+    expect(f?.severity).toBe('info');
+    expect(f?.fix).toBeUndefined();
+  });
+
+  it('missing node_modules never produces an error finding', () => {
+    for (const pm of ['pnpm', 'npm', 'yarn', 'bun', null] as const) {
+      const findings = diffRequirementsVsEnvironment(makeReqs(pm), baseEnv(false));
+      const depFinding = findings.find((x) => x.category === 'deps');
+      expect(depFinding?.severity).not.toBe('error');
+    }
+  });
+});
+
