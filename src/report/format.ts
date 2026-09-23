@@ -1,11 +1,17 @@
 /**
  * format.ts
  *
- * Renders a ScanResult to the terminal (colored table + fix section)
+ * Renders a ScanResult to the terminal (modern line-based renderer)
  * or as machine-readable JSON.
+ *
+ * The human-readable renderer is styled like Bun/Vite/pnpm output:
+ *   - No outer borders
+ *   - Status glyph + colored category label + message, one per line
+ *   - Grouped by severity: Errors → Warnings → Passed
+ *   - Indented "→ fix:" line directly under each actionable finding
+ *   - Compact summary line at the end
  */
 
-import Table from 'cli-table3';
 import pc from 'picocolors';
 import type { Finding, ScanResult, Severity } from '../types.js';
 
@@ -13,95 +19,86 @@ import type { Finding, ScanResult, Severity } from '../types.js';
 
 const ICON: Record<Severity, string> = {
   error: '❌',
-  warn: '⚠ ',
-  ok: '✓ ',
+  warn:  '⚠ ',
+  ok:    '✓ ',
 };
 
-function colorBySeverity(text: string, severity: Severity): string {
-  switch (severity) {
-    case 'error': return pc.red(text);
-    case 'warn':  return pc.yellow(text);
-    case 'ok':    return pc.green(text);
-  }
-}
+const CATEGORY_LABEL: Record<Finding['category'], string> = {
+  node:           'Node      ',
+  pm:             'Package Mgr',
+  'ambiguous-pm': 'Lockfiles  ',
+  deps:           'Deps       ',
+  env:            'Env Vars   ',
+  docker:         'Docker     ',
+  ports:          'Ports      ',
+};
 
-function categoryLabel(cat: Finding['category']): string {
-  const labels: Record<Finding['category'], string> = {
-    node:   'Node',
-    pm:     'Package Mgr',
-    deps:   'Dependencies',
-    env:    'Env Vars',
-    docker: 'Docker',
-    ports:  'Ports',
-  };
-  return labels[cat];
-}
-
-// ─── Terminal table ───────────────────────────────────────────────────────────
+// ─── Human-readable renderer ──────────────────────────────────────────────────
 
 export function renderTable(result: ScanResult): string {
   const { findings, targetDir } = result;
 
+  const errors   = findings.filter((f) => f.severity === 'error');
+  const warnings = findings.filter((f) => f.severity === 'warn');
+  const passed   = findings.filter((f) => f.severity === 'ok');
+
   const lines: string[] = [];
 
+  // ── Banner ──────────────────────────────────────────────────────────────────
   lines.push('');
-  lines.push(pc.bold(pc.cyan('RunCheck v0.1')) + pc.dim(` — scanning ${targetDir}`));
+  lines.push(
+    pc.bold('RunCheck') +
+    pc.dim('  v0.1.1') +
+    pc.dim('  ·  ') +
+    pc.dim(targetDir),
+  );
+  lines.push(pc.dim('─'.repeat(60)));
   lines.push('');
 
-  const table = new Table({
-    head: [
-      pc.bold('Status'),
-      pc.bold('Category'),
-      pc.bold('Details'),
-      pc.bold('Suggested Fix'),
-    ],
-    colWidths: [8, 14, 52, 42],
-    wordWrap: true,
-    style: { head: [], border: ['dim'] },
-  });
+  // ── Section renderer ────────────────────────────────────────────────────────
+  function renderSection(
+    sectionFindings: Finding[],
+    label: string,
+    colorFn: (s: string) => string,
+    dimItems: boolean,
+  ): void {
+    if (sectionFindings.length === 0) return;
 
-  for (const f of findings) {
-    const icon = ICON[f.severity];
-    const status = colorBySeverity(`${icon}`, f.severity);
-    const cat = pc.dim(categoryLabel(f.category));
-    const msg = colorBySeverity(f.message, f.severity);
-    const fix = f.fix ? pc.dim(f.fix) : '';
-    table.push([status, cat, msg, fix]);
-  }
+    lines.push(pc.bold(label));
 
-  lines.push(table.toString());
+    for (const f of sectionFindings) {
+      const icon     = ICON[f.severity];
+      const cat      = pc.dim(CATEGORY_LABEL[f.category] ?? f.category.padEnd(11));
+      const msg      = dimItems ? pc.dim(f.message) : colorFn(f.message);
+      lines.push(`  ${icon}  ${cat}  ${msg}`);
 
-  // ── Summary line ──
-  const errors = findings.filter((f) => f.severity === 'error').length;
-  const warns  = findings.filter((f) => f.severity === 'warn').length;
-  const oks    = findings.filter((f) => f.severity === 'ok').length;
+      if (f.fix) {
+        lines.push(`           ${pc.dim('→ fix: ')}${pc.dim(f.fix)}`);
+      }
+    }
 
-  const parts: string[] = [];
-  if (errors) parts.push(pc.red(`${errors} error${errors > 1 ? 's' : ''}`));
-  if (warns)  parts.push(pc.yellow(`${warns} warning${warns > 1 ? 's' : ''}`));
-  if (oks)    parts.push(pc.green(`${oks} ok`));
-
-  lines.push('');
-  if (errors === 0 && warns === 0) {
-    lines.push(pc.green(pc.bold('✓ All checks passed.')));
-  } else {
-    lines.push(pc.bold('Summary: ') + parts.join(', '));
-  }
-
-  // ── Fix suggestions ──
-  const fixes = findings
-    .filter((f) => f.fix && !f.fix.startsWith('#'))  // skip comment-only "fixes"
-    .map((f) => f.fix!);
-
-  // Deduplicate while preserving order
-  const uniqueFixes = [...new Map(fixes.map((f) => [f, f])).values()];
-
-  if (uniqueFixes.length > 0) {
     lines.push('');
-    lines.push(pc.bold('Fix suggestions:'));
-    uniqueFixes.forEach((fix, i) => {
-      lines.push(`  ${pc.dim(`${i + 1}.`)} ${pc.cyan(fix)}`);
-    });
+  }
+
+  renderSection(errors,   'Errors',   pc.red,    false);
+  renderSection(warnings, 'Warnings', pc.yellow, false);
+  renderSection(passed,   'Passed',   pc.green,  true);
+
+  // ── Summary ──────────────────────────────────────────────────────────────────
+  const errCount  = errors.length;
+  const warnCount = warnings.length;
+  const okCount   = passed.length;
+
+  if (errCount === 0 && warnCount === 0) {
+    lines.push(pc.green(pc.bold(`✓ All ${okCount} checks passed.`)));
+  } else {
+    const parts: string[] = [];
+    if (errCount)  parts.push(pc.red(`${errCount} error${errCount > 1 ? 's' : ''}`));
+    if (warnCount) parts.push(pc.yellow(`${warnCount} warning${warnCount > 1 ? 's' : ''}`));
+    if (okCount)   parts.push(pc.green(`${okCount} passed`));
+
+    const summary = parts.join(pc.dim(' · '));
+    lines.push(errCount > 0 ? pc.bold(summary) : summary);
   }
 
   lines.push('');

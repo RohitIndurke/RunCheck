@@ -1,0 +1,13 @@
+{
+  "name": "npm-project",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "node --port 3000 server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.0"
+  }
+}

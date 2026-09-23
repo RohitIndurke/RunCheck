@@ -1,6 +1,6 @@
 {
   "name": "runcheck",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "CLI doctor for Node.js projects — spot root-cause blockers before you hit them",
   "bin": {
     "runcheck": "./dist/cli.js"
@@ -18,7 +18,6 @@
     "pnpm": ">=8"
   },
   "dependencies": {
-    "cli-table3": "^0.6.5",
     "commander": "^12.1.0",
     "execa": "^9.3.0",
     "picocolors": "^1.1.0",
