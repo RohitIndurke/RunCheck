@@ -1,6 +1,6 @@
 // ─── Core domain types ────────────────────────────────────────────────────────
 
-export type Severity = 'error' | 'warn' | 'ok';
+export type Severity = 'error' | 'warn' | 'ok' | 'info';
 
 export type Category = 'node' | 'pm' | 'ambiguous-pm' | 'deps' | 'env' | 'docker' | 'ports';
 

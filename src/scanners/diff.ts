@@ -161,17 +161,41 @@ function checkDependencies(
   reqs: ProjectRequirements,
   env: LocalEnvironment,
 ): Finding[] {
-  const pm = reqs.packageManager ?? 'npm';
-  const installCmd = pm === 'npm' ? 'npm install' : `${pm} install`;
-
-  if (!env.nodeModulesExists) {
+  // No package.json at root → not a Node project; skip deps check entirely
+  if (!reqs.packageJsonPath) {
     return [
       {
-        severity: 'error',
+        severity: 'ok',
         category: 'deps',
         priority: 3,
-        message: 'node_modules not found — dependencies are not installed',
-        fix: installCmd,
+        message: 'No package.json found — skipping dependency check',
+      },
+    ];
+  }
+
+  const pm = reqs.packageManager;
+  const installCmd = pm ? (pm === 'npm' ? 'npm install' : `${pm} install`) : null;
+
+  if (!env.nodeModulesExists) {
+    // A freshly cloned repo normally has no node_modules — this is expected, not an error.
+    if (installCmd) {
+      return [
+        {
+          severity: 'info',
+          category: 'deps',
+          priority: 3,
+          message: 'node_modules not installed',
+          fix: installCmd,
+        },
+      ];
+    }
+    // No PM detected — can't suggest an install command
+    return [
+      {
+        severity: 'info',
+        category: 'deps',
+        priority: 3,
+        message: 'node_modules not installed — package manager unknown',
       },
     ];
   }
@@ -183,7 +207,7 @@ function checkDependencies(
         category: 'deps',
         priority: 3,
         message: 'Lockfile is newer than node_modules — dependencies may be out of sync',
-        fix: installCmd,
+        fix: installCmd ?? 'npm install',
       },
     ];
   }
