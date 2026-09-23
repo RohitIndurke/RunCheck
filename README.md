@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![Node >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-blueviolet)](CONTRIBUTING.md)
+![Visitors](https://view-counter.tobyhagan.com/?user=RohitIndurke/RunCheck)
 
 RunCheck statically analyses a Node.js project — local or remote — and surfaces the **root-cause blockers** in priority order. No AI, no magic, just fast static analysis of your config files compared against your local environment.
 
