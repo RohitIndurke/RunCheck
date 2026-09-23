@@ -1,0 +1,14 @@
+# pnpm lockfile v6
+
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+packages:
+
+  /next@14.0.0:
+    resolution: {integrity: sha512-fake}
+    engines: {node: '>=18.17.0'}
+    dev: false

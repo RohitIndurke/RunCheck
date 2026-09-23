@@ -1,0 +1,14 @@
+# pnpm lockfile v6
+
+lockfileVersion: '6.0'
+
+settings:
+  autoInstallPeers: true
+  excludeLinksFromLockfile: false
+
+packages:
+
+  /express@4.18.0:
+    resolution: {integrity: sha512-fake}
+    engines: {node: '>= 0.10.0'}
+    dev: false

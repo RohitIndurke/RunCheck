@@ -1,0 +1,16 @@
+{
+  "name": "broken-project",
+  "version": "1.0.0",
+  "description": "A project that has multiple issues for RunCheck to detect",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "next dev --port 3000",
+    "start": "PORT=8080 node server.js"
+  },
+  "dependencies": {
+    "next": "^14.0.0",
+    "react": "^18.0.0"
+  }
+}
