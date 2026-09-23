@@ -5,22 +5,31 @@
  * list of findings. No I/O here — makes it easy to unit-test.
  *
  * Root-cause priority order:
- *   1 — Node version  (breaks everything downstream)
- *   2 — Package manager missing
- *   3 — Dependencies not installed / stale
- *   4 — .env key mismatches
- *   5 — Docker unavailable
- *   6 — Ports already bound
+ *   1   — Node version  (breaks everything downstream)
+ *   1.5 — Ambiguous package manager (repo hygiene warning)
+ *   2   — Package manager missing / wrong version
+ *   3   — Dependencies not installed / stale
+ *   4   — .env key mismatches
+ *   5   — Docker unavailable
+ *   6   — Ports already bound
  */
 
 import semver from 'semver';
 import type { Finding, LocalEnvironment, ProjectRequirements } from '../types.js';
+
+// ─── Options ──────────────────────────────────────────────────────────────────
+
+export interface DiffOptions {
+  /** When true, append source info to applicable finding messages */
+  verbose?: boolean;
+}
 
 // ─── Individual checks ────────────────────────────────────────────────────────
 
 function checkNode(
   reqs: ProjectRequirements,
   env: LocalEnvironment,
+  opts: DiffOptions,
 ): Finding[] {
   if (!reqs.nodeRange) {
     return [
@@ -33,9 +42,12 @@ function checkNode(
     ];
   }
 
-  // strip the leading "v" so semver.satisfies works
+  // Strip the leading "v" so semver.satisfies works
   const installed = env.nodeVersion.replace(/^v/, '');
   const range = reqs.nodeRange;
+
+  const sourceSuffix =
+    opts.verbose && reqs.nodeRangeSource ? ` (from ${reqs.nodeRangeSource})` : '';
 
   if (semver.satisfies(installed, range)) {
     return [
@@ -43,7 +55,7 @@ function checkNode(
         severity: 'ok',
         category: 'node',
         priority: 1,
-        message: `Node ${env.nodeVersion} satisfies required ${range}`,
+        message: `Node ${env.nodeVersion} satisfies required ${range}${sourceSuffix}`,
       },
     ];
   }
@@ -57,8 +69,25 @@ function checkNode(
       severity: 'error',
       category: 'node',
       priority: 1,
-      message: `Node ${env.nodeVersion} detected — project requires ${range}`,
+      message: `Node ${env.nodeVersion} detected — project requires ${range}${sourceSuffix}`,
       fix,
+    },
+  ];
+}
+
+function checkAmbiguousPm(reqs: ProjectRequirements): Finding[] {
+  if (reqs.ambiguousLockfiles.length <= 1) return [];
+
+  const names = reqs.ambiguousLockfiles
+    .map((p) => p.split(/[\\/]/).pop()!)
+    .join(', ');
+
+  return [
+    {
+      severity: 'warn',
+      category: 'ambiguous-pm',
+      priority: 1.5,
+      message: `Multiple lockfiles found: ${names} — remove all but one to avoid install inconsistencies`,
     },
   ];
 }
@@ -96,6 +125,26 @@ function checkPackageManager(
         fix: installHint[pm],
       },
     ];
+  }
+
+  // If an engine range is specified, check it
+  if (reqs.pmEngineRange) {
+    // Strip non-semver prefix (e.g. "pnpm/9.2.0" → "9.2.0")
+    const rawVer = env.packageManagerVersion.replace(/^[^\d]*/, '');
+    if (rawVer && semver.valid(semver.coerce(rawVer))) {
+      const coerced = semver.coerce(rawVer)!.version;
+      if (!semver.satisfies(coerced, reqs.pmEngineRange)) {
+        return [
+          {
+            severity: 'error',
+            category: 'pm',
+            priority: 2,
+            message: `${pm} ${env.packageManagerVersion} does not satisfy required ${reqs.pmEngineRange} (engines.${pm})`,
+            fix: `npm install -g ${pm}@latest`,
+          },
+        ];
+      }
+    }
   }
 
   return [
@@ -153,6 +202,18 @@ function checkEnv(
   reqs: ProjectRequirements,
   env: LocalEnvironment,
 ): Finding[] {
+  // Monorepo: skip the per-package env check to avoid false positives
+  if (reqs.isMonorepo) {
+    return [
+      {
+        severity: 'warn',
+        category: 'env',
+        priority: 4,
+        message: 'Monorepo detected — scanning root only, per-package .env files not checked',
+      },
+    ];
+  }
+
   if (reqs.envExampleKeys.length === 0) {
     return []; // no .env.example — nothing to check
   }
@@ -223,19 +284,23 @@ function checkDocker(
         category: 'docker',
         priority: 5,
         message: 'Docker CLI not found — project has a Dockerfile/docker-compose',
-        fix: 'Install Docker Desktop from https://www.docker.com/products/docker-desktop/',
+        fix: 'Install Docker from https://docs.docker.com/get-docker/',
       },
     ];
   }
 
   if (!env.dockerDaemonRunning) {
+    const fix =
+      process.platform === 'linux'
+        ? 'sudo systemctl start docker'
+        : 'Open Docker Desktop';
     return [
       {
-        severity: 'warn',
+        severity: 'error',
         category: 'docker',
         priority: 5,
         message: 'Docker CLI found but daemon is not running (docker info failed)',
-        fix: 'Start Docker Desktop or run `sudo systemctl start docker`',
+        fix,
       },
     ];
   }
@@ -265,9 +330,11 @@ function checkPorts(env: LocalEnvironment): Finding[] {
 export function diffRequirementsVsEnvironment(
   reqs: ProjectRequirements,
   env: LocalEnvironment,
+  opts: DiffOptions = {},
 ): Finding[] {
   const findings: Finding[] = [
-    ...checkNode(reqs, env),
+    ...checkNode(reqs, env, opts),
+    ...checkAmbiguousPm(reqs),
     ...checkPackageManager(reqs, env),
     ...checkDependencies(reqs, env),
     ...checkEnv(reqs, env),

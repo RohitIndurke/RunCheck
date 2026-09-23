@@ -1,0 +1,11 @@
+{
+  "name": "my-monorepo",
+  "version": "1.0.0",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev"
+  }
+}

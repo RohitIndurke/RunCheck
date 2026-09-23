@@ -23,9 +23,9 @@ function readFile(filePath: string): string | null {
   }
 }
 
-async function getCommandVersion(cmd: string): Promise<string | null> {
+async function getCommandVersion(cmd: string, args = ['-v']): Promise<string | null> {
   try {
-    const result = await execa(cmd, ['-v'], { reject: false });
+    const result = await execa(cmd, args, { reject: false });
     if (result.exitCode === 0) {
       return (result.stdout || result.stderr).trim();
     }
@@ -93,11 +93,13 @@ async function probeDocker(): Promise<{ cli: boolean; daemon: boolean }> {
 
 // ─── PM version ───────────────────────────────────────────────────────────────
 
+// Version flag varies by PM: npm/yarn/pnpm accept --version; bun uses --version too.
+// Use --version for all since it's universally supported and returns a clean semver.
 async function getPmVersion(
   pm: ProjectRequirements['packageManager'],
 ): Promise<string | null> {
   if (!pm) return null;
-  return getCommandVersion(pm);
+  return getCommandVersion(pm, ['--version']);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
