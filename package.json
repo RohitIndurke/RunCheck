@@ -2,9 +2,8 @@
   "name": "runcheck",
   "version": "0.1.0",
   "description": "CLI doctor for Node.js projects — spot root-cause blockers before you hit them",
-  "type": "module",
   "bin": {
-    "runcheck": "./dist/index.js"
+    "runcheck": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsup",
