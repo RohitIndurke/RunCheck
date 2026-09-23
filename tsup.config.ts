@@ -3,11 +3,13 @@ import { defineConfig } from 'tsup';
 export default defineConfig({
   entry: ['src/cli.ts'],
   outDir: 'dist',
-  format: ['esm'],
+  format: ['cjs'],
   target: 'node20',
   banner: {
     js: '#!/usr/bin/env node',
   },
+  // Keep .js extension even in CJS mode so the bin path stays stable
+  outExtension: () => ({ js: '.js' }),
   clean: true,
   splitting: false,
   sourcemap: false,
