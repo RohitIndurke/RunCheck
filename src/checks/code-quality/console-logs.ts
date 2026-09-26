@@ -6,10 +6,10 @@
  * breakdown rather than one finding per statement (avoids noise).
  */
 
-import fs from 'node:fs';
-import path from 'node:path';
-import type { Finding } from '../../types.js';
-import { walkSourceFiles } from '../utils.js';
+import fs from "node:fs";
+import path from "node:path";
+import type { Finding } from "../../types.js";
+import { walkSourceFiles } from "../utils.js";
 
 const CONSOLE_RE = /\bconsole\.(log|warn|error|info|debug)\s*\(/g;
 
@@ -28,7 +28,7 @@ export function scanConsoleLogs(targetDir: string): Finding[] {
   for (const filePath of walkSourceFiles(targetDir)) {
     let content: string;
     try {
-      content = fs.readFileSync(filePath, 'utf8');
+      content = fs.readFileSync(filePath, "utf8");
     } catch {
       continue;
     }
@@ -51,17 +51,17 @@ export function scanConsoleLogs(targetDir: string): Finding[] {
 
   const breakdown = topFiles
     .map(([f, n]) => `  ${f.padEnd(40)} ${n}`)
-    .join('\n');
+    .join("\n");
 
   return [
     {
-      severity: 'warn',
-      category: 'code-quality',
-      rule: 'console-log',
+      severity: "warn",
+      category: "code-quality",
+      rule: "console-log",
       priority: 26,
-      message: `${total} console statements found across ${fileCounts.size} file${fileCounts.size > 1 ? 's' : ''}`,
+      message: `${total} console statements found across ${fileCounts.size} file${fileCounts.size > 1 ? "s" : ""}`,
       suggestion:
-        'Replace with a proper logger (e.g. pino, winston) or remove before shipping',
+        "Replace with a proper logger (e.g. pino, winston) or remove before shipping",
       // Embed breakdown as the "value" field for the reporter to display
       value: breakdown || undefined,
     },
