@@ -1,14 +1,29 @@
-# RunCheck
+<p align="center">
+  <img src="assets/logo.png" alt="RunCheck Header Banner" width="100%" />
+</p>
 
-> **Pre-ship sanity check for your codebase.**
-> You vibe-coded it. RunCheck makes sure you can actually ship it.
+<h1 align="center">RunCheck</h1>
 
-[![npm version](https://img.shields.io/npm/v/runcheck?color=0ea5e9&label=runcheck)](https://www.npmjs.com/package/runcheck)
-[![CI](https://github.com/RohitIndurke/RunCheck/actions/workflows/ci.yml/badge.svg)](https://github.com/RohitIndurke/RunCheck/actions/workflows/ci.yml)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Node >=20](https://img.shields.io/badge/node-%3E%3D20-brightgreen)](https://nodejs.org)
-[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-blueviolet)](CONTRIBUTING.md)
-![Visitors](https://view-counter.tobyhagan.com/?user=RohitIndurke/RunCheck)
+<p align="center">
+  <strong>Pre-ship sanity check for your codebase.</strong><br>
+  <em>You vibe-coded it. RunCheck makes sure you can actually ship it.</em>
+</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/runcheck"><img src="https://img.shields.io/npm/v/runcheck?color=0ea5e9&label=runcheck" alt="npm version"></a>
+  <a href="https://github.com/RohitIndurke/RunCheck/actions/workflows/ci.yml"><img src="https://github.com/RohitIndurke/RunCheck/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="License: MIT"></a>
+  <a href="https://nodejs.org"><img src="https://img.shields.io/badge/node-%3E%3D20-brightgreen" alt="Node >=20"></a>
+  <a href="CONTRIBUTING.md"><img src="https://img.shields.io/badge/PRs-welcome-blueviolet" alt="PRs Welcome"></a>
+</p>
+
+---
+
+<p align="center">
+  <video src="assets/demo.mp4" autoplay loop muted playsinline width="100%"></video>
+</p>
+
+---
 
 RunCheck runs **five focused checks** against your project and produces a single Ship Report that answers one question:
 
