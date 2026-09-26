@@ -1,5 +1,5 @@
 /**
- * cli.ts — RunCheck entry point
+ * cli.ts — RunCheck V1 entry point
  *
  * Usage:
  *   npx runcheck              # scan current directory
@@ -13,31 +13,137 @@
 import path from "node:path";
 import { program } from "commander";
 import pc from "picocolors";
+
+// ── Legacy environment health scanners (preserved) ────────────────────────────
 import { scanRequirements } from "./scanners/requirements.js";
 import { scanEnvironment } from "./scanners/environment.js";
 import { diffRequirementsVsEnvironment } from "./scanners/diff.js";
-import { renderTable, renderJson } from "./report/format.js";
+
+// ── V1 ship-readiness checks ──────────────────────────────────────────────────
+import { scanTodos } from "./checks/code-quality/todo.js";
+import { scanStubs } from "./checks/code-quality/stubs.js";
+import { scanSwallowedErrors } from "./checks/code-quality/swallowed-errors.js";
+import { scanConsoleLogs } from "./checks/code-quality/console-logs.js";
+import { scanHardcodedValues } from "./checks/code-quality/hardcoded-values.js";
+import { scanSecrets } from "./checks/security/secrets.js";
+import { scanUnusedDeps } from "./checks/dependencies/unused-deps.js";
+import { runBuildCheck } from "./checks/build/build-check.js";
+
+// ── Reporting ─────────────────────────────────────────────────────────────────
+import { renderShipReport, renderJson } from "./report/ship-report.js";
 import { runFix } from "./fixers/fix.js";
 import { isRemoteUrl, cloneRepository } from "./remote/git.js";
-import type { ScanResult } from "./types.js";
+import type { ScanResult, Finding } from "./types.js";
 
 // ─── Package version ──────────────────────────────────────────────────────────
 
-// Kept in sync with package.json — update both together on releases.
-const RC_VERSION = "0.1.1";
+const RC_VERSION = "1.0.0";
+
+// ─── Progress display ─────────────────────────────────────────────────────────
+
+function status(label: string): void {
+  process.stdout.write(`  ${pc.dim("·")} ${pc.dim(label)}\n`);
+}
+
+function statusDone(label: string): void {
+  // Overwrite the previous line using ANSI escape (no-op on non-TTY)
+  process.stdout.write(`  ${pc.green("✓")} ${label}\n`);
+}
+
+function statusFail(label: string): void {
+  process.stdout.write(`  ${pc.red("✗")} ${label}\n`);
+}
+
+// ─── Core scan orchestration ──────────────────────────────────────────────────
+
+async function runScan(
+  targetDir: string,
+  opts: { verbose?: boolean; json?: boolean },
+): Promise<ScanResult> {
+  const startMs = Date.now();
+  const allFindings: Finding[] = [];
+
+  const quiet = !!opts.json;
+
+  // ── 1. Environment health (legacy checks) ─────────────────────────────────
+  if (!quiet) status("Checking environment");
+  const reqs = scanRequirements(targetDir);
+  const env = await scanEnvironment(targetDir, reqs);
+  const envFindings = diffRequirementsVsEnvironment(reqs, env, {
+    verbose: opts.verbose,
+  });
+  allFindings.push(...envFindings);
+  if (!quiet) statusDone("Environment checked");
+
+  // ── 2. Secret detection ───────────────────────────────────────────────────
+  if (!quiet) status("Detecting secrets");
+  const secretFindings = scanSecrets(targetDir);
+  allFindings.push(...secretFindings);
+  if (!quiet) {
+    if (secretFindings.some((f) => f.severity === "error")) {
+      statusFail("Secrets detected");
+    } else {
+      statusDone("Secrets scan complete");
+    }
+  }
+
+  // ── 3. Code quality checks (run in parallel) ──────────────────────────────
+  if (!quiet) status("Analyzing code quality");
+  const [todos, stubs, swallowed, consoleLogs, hardcoded] = await Promise.all([
+    Promise.resolve(scanTodos(targetDir)),
+    Promise.resolve(scanStubs(targetDir)),
+    Promise.resolve(scanSwallowedErrors(targetDir)),
+    Promise.resolve(scanConsoleLogs(targetDir)),
+    Promise.resolve(scanHardcodedValues(targetDir)),
+  ]);
+  allFindings.push(
+    ...todos,
+    ...stubs,
+    ...swallowed,
+    ...consoleLogs,
+    ...hardcoded,
+  );
+  if (!quiet) statusDone("Code quality analyzed");
+
+  // ── 4. Dependency analysis ────────────────────────────────────────────────
+  if (!quiet) status("Checking dependencies");
+  const depFindings = scanUnusedDeps(targetDir);
+  allFindings.push(...depFindings);
+  if (!quiet) statusDone("Dependencies checked");
+
+  // ── 5. Build verification ─────────────────────────────────────────────────
+  if (!quiet) status("Verifying build");
+  const buildResult = await runBuildCheck(targetDir);
+  if (!quiet) {
+    if (!buildResult.passed) {
+      statusFail("Build failed");
+    } else {
+      statusDone("Build verified");
+    }
+  }
+
+  const durationMs = Date.now() - startMs;
+  const projectName = path.basename(targetDir);
+
+  return {
+    targetDir,
+    projectName,
+    findings: allFindings,
+    scannedAt: new Date().toISOString(),
+    durationMs,
+    buildResult,
+  };
+}
 
 // ─── CLI definition ───────────────────────────────────────────────────────────
 
 program
   .name("runcheck")
-  .description(
-    "CLI doctor for Node.js projects — spot root-cause blockers before you hit them",
-  )
+  .description("Pre-ship sanity check for your codebase")
   .argument("[path]", "directory to scan", ".")
   .option("--json", "output results as machine-readable JSON")
   .option("--verbose", "include requirement source in each finding message")
-  .option("--fix", "attempt to auto-fix issues (stub in v0.1)")
-  // Override --version to include runtime info for bug reports
+  .option("--fix", "attempt to auto-fix issues (stub in v1.0)")
   .option("-V, --version", "print RunCheck version and runtime info")
   .action(
     async (
@@ -49,7 +155,7 @@ program
         version?: boolean;
       },
     ) => {
-      // ── --version ──────────────────────────────────────────────────────────────
+      // ── --version ────────────────────────────────────────────────────────────
       if (opts.version) {
         console.log(`RunCheck v${RC_VERSION}`);
         console.log(
@@ -58,13 +164,17 @@ program
         process.exit(0);
       }
 
-      // Non-TTY fallback: piped output shouldn't contain ANSI/box-drawing codes
+      // Non-TTY fallback: piped output shouldn't contain ANSI codes
       const useJson = opts.json || !process.stdout.isTTY;
 
-      // ── Remote URL handling ────────────────────────────────────────────────────
+      // ── Remote URL handling ──────────────────────────────────────────────────
       if (isRemoteUrl(targetArg)) {
         if (!useJson) {
-          process.stdout.write(pc.dim("Scanning repository…\n"));
+          console.log("");
+          console.log(`${pc.bold("◈ RunCheck")}`);
+          console.log(pc.dim("Pre-ship sanity check"));
+          console.log("");
+          console.log(pc.dim(`Cloning ${targetArg}…`));
         }
 
         let cleanup: (() => void) | undefined;
@@ -73,79 +183,80 @@ program
           cleanup = cloneResult.cleanup;
           const targetDir = cloneResult.cloneDir;
 
-          const reqs = scanRequirements(targetDir);
-          const env = await scanEnvironment(targetDir, reqs);
-          const findings = diffRequirementsVsEnvironment(reqs, env, {
+          if (!useJson) {
+            console.log("");
+            console.log(pc.dim(`Scanning ${targetArg}`));
+            console.log("");
+          }
+
+          const result = await runScan(targetDir, {
             verbose: opts.verbose,
+            json: useJson,
           });
+          // Use the original URL as the display name for remote scans
+          result.projectName = targetArg.replace(/^https?:\/\//, "");
+          result.targetDir = targetArg;
 
-          // Show the original URL in the banner, not the opaque temp path
-          const result: ScanResult = {
-            targetDir: targetArg,
-            findings,
-            scannedAt: new Date().toISOString(),
-          };
-
+          if (!useJson) console.log("");
           if (useJson) {
             console.log(renderJson(result));
           } else {
-            process.stdout.write(renderTable(result));
+            process.stdout.write(renderShipReport(result));
             if (opts.fix) runFix();
           }
 
           cleanup();
 
-          const hasErrors = findings.some((f) => f.severity === "error");
+          const hasErrors =
+            result.findings.some((f) => f.severity === "error") ||
+            (result.buildResult && !result.buildResult.passed);
           if (hasErrors) process.exit(1);
         } catch (err) {
           cleanup?.();
-          // Clone errors already have a user-friendly message from git.ts
-          console.error(pc.red(err instanceof Error ? err.message : String(err)));
+          console.error(
+            pc.red(err instanceof Error ? err.message : String(err)),
+          );
           process.exit(2);
         }
         return;
       }
 
-      // ── Local path handling (unchanged) ───────────────────────────────────────
+      // ── Local path handling ──────────────────────────────────────────────────
       const targetDir = path.resolve(process.cwd(), targetArg);
 
       if (!useJson) {
-        process.stdout.write(pc.dim("Scanning…\n"));
+        console.log("");
+        console.log(`${pc.bold("◈ RunCheck")}`);
+        console.log(pc.dim("Pre-ship sanity check"));
+        console.log("");
+        console.log(pc.dim(`Scanning ${targetDir}`));
+        console.log("");
       }
 
       try {
-        // 1. Read project requirements
-        const reqs = scanRequirements(targetDir);
-
-        // 2. Probe local environment
-        const env = await scanEnvironment(targetDir, reqs);
-
-        // 3. Diff → ranked findings
-        const findings = diffRequirementsVsEnvironment(reqs, env, {
+        const result = await runScan(targetDir, {
           verbose: opts.verbose,
+          json: useJson,
         });
 
-        const result: ScanResult = {
-          targetDir,
-          findings,
-          scannedAt: new Date().toISOString(),
-        };
-
-        // 4. Render
+        if (!useJson) console.log("");
         if (useJson) {
           console.log(renderJson(result));
+          // Bug fix: exit 1 on critical issues even in JSON mode
+          const hasJsonErrors =
+            result.findings.some((f) => f.severity === "error") ||
+            (result.buildResult && !result.buildResult.passed);
+          if (hasJsonErrors) process.exit(1);
           return;
         }
 
-        process.stdout.write(renderTable(result));
+        process.stdout.write(renderShipReport(result));
 
-        // 5. --fix stub
-        if (opts.fix) {
-          runFix();
-        }
+        if (opts.fix) runFix();
 
-        // Exit with code 1 if any errors found
-        const hasErrors = findings.some((f) => f.severity === "error");
+        const hasErrors =
+          result.findings.some((f) => f.severity === "error") ||
+          (result.buildResult && !result.buildResult.passed);
         if (hasErrors) process.exit(1);
       } catch (err) {
         console.error(pc.red("RunCheck encountered an unexpected error:"));

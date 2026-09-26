@@ -1,7 +1,7 @@
 {
   "name": "runcheck",
-  "version": "0.1.1",
-  "description": "CLI doctor for Node.js projects — spot root-cause blockers before you hit them",
+  "version": "1.0.0",
+  "description": "Pre-ship sanity check for your codebase",
   "bin": {
     "runcheck": "./dist/cli.js"
   },
@@ -11,8 +11,13 @@
     "test": "vitest run",
     "test:watch": "vitest"
   },
-  "keywords": ["cli", "node", "doctor", "devtools", "dx"],
+  "keywords": ["cli", "node", "vibe-code", "ship", "devtools", "dx", "ai-coding"],
   "license": "MIT",
+  "files": [
+    "dist/",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=20",
     "pnpm": ">=8"
