@@ -1,6 +1,7 @@
 # RunCheck
 
-> **CLI doctor for Node.js projects** — spot root-cause blockers *before* you hit them.
+> **Pre-ship sanity check for your codebase.**
+> You vibe-coded it. RunCheck makes sure you can actually ship it.
 
 [![npm version](https://img.shields.io/npm/v/runcheck?color=0ea5e9&label=runcheck)](https://www.npmjs.com/package/runcheck)
 [![CI](https://github.com/RohitIndurke/RunCheck/actions/workflows/ci.yml/badge.svg)](https://github.com/RohitIndurke/RunCheck/actions/workflows/ci.yml)
@@ -9,32 +10,81 @@
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-blueviolet)](CONTRIBUTING.md)
 ![Visitors](https://view-counter.tobyhagan.com/?user=RohitIndurke/RunCheck)
 
-RunCheck statically analyses a Node.js project — local or remote — and surfaces the **root-cause blockers** in priority order. No AI, no magic, just fast static analysis of your config files compared against your local environment.
+RunCheck runs **five focused checks** against your project and produces a single Ship Report that answers one question:
+
+> **Can I confidently move on to shipping, or should I inspect something first?**
 
 ```
 npx runcheck
 ```
 
 ```
-RunCheck  v0.1.1  ·  https://github.com/you/your-app
-────────────────────────────────────────────────────────────
+◈ RunCheck
+Pre-ship sanity check
 
-Errors
-  ❌  Node        Node v18.20.0 detected — project requires >=20
-           → fix: nvm install 20 && nvm use 20
+Scanning /path/to/my-app
 
-Setup
-  ℹ   Deps        node_modules not installed
-           → fix: pnpm install
+  ✓ Environment checked
+  ✗ Secrets detected
+  ✓ Code quality analyzed
+  ✓ Dependencies checked
+  ✓ Build verified
 
-Warnings
-  ⚠   Lockfiles   Multiple lockfiles found: pnpm-lock.yaml, package-lock.json
-                  — remove all but one to avoid install inconsistencies
+────────────────────────────────────────────────────────
 
-Passed
-  ✓   Package Mgr  pnpm 10.16.0 available
+RESULT
 
-1 error · 1 setup action · 1 warning · 1 passed
+  ✗ NOT READY TO SHIP
+
+  1 critical · 4 warnings
+
+────────────────────────────────────────────────────────
+
+BUILD
+
+  ✓ Build passed  18.4s
+
+SECURITY
+
+  ✗ Possible OpenAI API key detected
+     src/config.ts:18
+     Value: sk-p••••••••••••••••
+     → Move to an environment variable and rotate the key
+
+CODE QUALITY
+
+  ⚠ 4 TODO/FIXME comments
+  ⚠ 2 swallowed errors
+     src/services/payment.ts:81
+     src/api/users.ts:12
+
+DEPENDENCIES
+
+  ⚠ 3 potentially unused dependencies in package.json
+     lodash
+     moment
+     axios
+
+ENVIRONMENT
+
+  ✓ Node v24.21.0 satisfies required >=20
+  ✓ pnpm 9.2.0 available
+  ✓ node_modules present and up-to-date
+
+────────────────────────────────────────────────────────
+
+CRITICAL FINDINGS
+
+   1.  Possible OpenAI API key detected
+       src/config.ts:18
+       Value: sk-p••••••••••••••••
+       → Move to an environment variable and rotate the key
+       Confidence: high
+
+────────────────────────────────────────────────────────
+
+Run runcheck --verbose for full details.
+Run runcheck --json for machine-readable output.
 ```
 
 ---
@@ -56,15 +106,16 @@ Passed
 
 ## Why RunCheck?
 
-Every Node.js developer has wasted time on *"it works on my machine"* bugs:
+Every developer who builds quickly with AI assistance leaves the same garbage behind:
 
-- Wrong Node version silently installed
-- Someone added a package but forgot to commit the lockfile
-- `.env` keys exist in `.env.example` but not in `.env`
-- Docker daemon not running before `docker-compose up`
-- Port 3000 already bound by another process
+- Secrets hardcoded in config files instead of env vars
+- `// TODO: implement this` left in production paths
+- Empty `catch {}` blocks silently swallowing errors
+- `throw new Error('Not implemented')` stubs forgotten in payment logic
+- Packages installed then never used
+- A build that fails before you even push
 
-RunCheck runs **once**, surfaces **all** of these at once, ordered by root cause — so you fix the real problem first, not a symptom.
+RunCheck finds all of it in one pass, tells you what's critical vs. worth noting, and gets out of your way.
 
 ---
 
@@ -83,16 +134,11 @@ npx runcheck ./path/to/project
 npx runcheck https://github.com/user/repo
 ```
 
-Or install globally for repeated use:
+Or install globally:
 
 ```bash
-# npm
 npm install -g runcheck
-
-# pnpm
 pnpm add -g runcheck
-
-# bun
 bun add -g runcheck
 ```
 
@@ -107,11 +153,9 @@ Arguments:
   path               Local directory or GitHub URL to scan  [default: "."]
 
 Options:
-  --json             Machine-readable JSON output (also auto-enabled when
-                     stdout is not a TTY, e.g. CI pipelines)
-  --verbose          Annotate findings with where each requirement was sourced
-                     (e.g. "engines.node", ".nvmrc")
-  --fix              Print suggested fix commands  (auto-execution coming in v0.2)
+  --verbose          Show additional detail in findings
+  --json             Machine-readable JSON output (also auto-enabled in CI/pipes)
+  --fix              Apply safe fixes (coming in v1.1)
   -V, --version      Print RunCheck version + Node/OS runtime info
   -h, --help         Show this help message
 ```
@@ -119,89 +163,127 @@ Options:
 ### Examples
 
 ```bash
-# Scan current project with verbose source annotations
+# Scan current project
+npx runcheck
+
+# Scan with verbose output
 npx runcheck --verbose
 
-# Scan a specific path
-npx runcheck ~/projects/my-app
-
-# Scan a GitHub repo (shallow clone, no auth required for public repos)
-npx runcheck https://github.com/facebook/react
-
-# CI-friendly JSON output piped to a file
+# CI-friendly JSON output
 npx runcheck --json > runcheck-report.json
 
-# Exit code 1 if any errors are found (useful in pre-commit hooks / CI gates)
+# Gate a CI step (exit code 1 if critical issues found)
 npx runcheck || exit 1
+
+# Scan a GitHub repo
+npx runcheck https://github.com/facebook/react
 ```
 
 ---
 
 ## Checks
 
-RunCheck runs the following checks in root-cause priority order:
+RunCheck runs five categories of checks:
 
-| Priority | Check | Source | Description |
-|----------|-------|--------|-------------|
-| **1** | **Node version** | `engines.node` → `.nvmrc` → `.node-version` | Mismatch breaks native addons, API support, and runtime behaviour. |
-| **1.5** | **Ambiguous package manager** | Multiple lockfiles detected | Multiple lockfiles cause non-deterministic installs. |
-| **2** | **Package manager** | Lockfile type · `packageManager` field | Wrong or missing PM means you can't install deps. |
-| **3** | **Dependencies** | `node_modules` existence + lockfile vs mtime | Detects missing or stale installs. |
-| **4** | **Env vars** | `.env.example` keys vs `.env` keys | Values are never read — only key presence is checked. |
-| **5** | **Docker** | `Dockerfile` / `docker-compose.yml` present | Verifies `docker` CLI and running daemon. |
-| **6** | **Ports** | `--port` / `PORT=` in `package.json` scripts | Checks if the port is already bound on your machine. |
+### 🔒 Security
+
+Detects secrets and API keys accidentally left in source code:
+
+| Pattern | Examples |
+|---------|---------|
+| OpenAI API keys | `sk-proj-...` |
+| AWS Access Key IDs | `AKIA...` |
+| GitHub Personal Access Tokens | `ghp_...`, `gho_...` |
+| Stripe keys | `sk_live_...`, `pk_live_...` |
+| Slack tokens | `xoxb-...`, `xoxp-...` |
+| Google API keys | `AIza...` |
+| PEM private keys | `-----BEGIN PRIVATE KEY-----` |
+| JWT tokens | `eyJ...` |
+| Generic high-entropy tokens | Any `api_key=`, `secret=`, `token=` with long values |
+| `.env` not in `.gitignore` | Prevents accidental credential commits |
+
+Values are **always redacted** — RunCheck never prints full secrets.
+
+### 🔍 Code Quality
+
+Detects common vibe-code smells:
+
+| Rule | What it catches | Severity |
+|------|----------------|---------|
+| `TODO/FIXME` | `// TODO: implement this`, `// FIXME: temporary` | Warning |
+| `stub` | `throw new Error('Not implemented')`, functions that only return `null`/`true`/`false` | Error / Warning |
+| `swallowed-error` | Empty `catch {}` blocks, catch blocks that only `console.log(err)` | Warning |
+| `console-log` | Excessive `console.log/warn/error` statements (≥5 total) | Warning |
+| `hardcoded-value` | Hardcoded `localhost:PORT` URLs, hardcoded IPs | Warning |
+
+### 📦 Dependencies
+
+- **Potentially unused packages** — compares `package.json` dependencies against actual imports
+
+### 🔨 Build
+
+- Runs `<pm> run build` and captures the result
+- Reports pass/fail with duration
+- Extracts key error lines without dumping the full log
+
+### ⚙️ Environment
+
+- **Node version** — checks `engines.node` / `.nvmrc` / `.node-version` against running Node
+- **Package manager** — verifies the right PM is installed (pnpm/yarn/bun/npm)
+- **Dependencies** — checks `node_modules` existence and lockfile freshness
+- **Env vars** — compares `.env.example` keys against `.env`
+- **Docker** — verifies CLI and daemon when Dockerfile/docker-compose detected
+- **Ports** — checks if required ports are already bound
 
 ### Severity levels
 
-| Icon | Level | Meaning |
-|------|-------|---------|
-| ❌ | **error** | Blocker — fix this first |
-| ⚠ | **warn** | Non-blocking issue; worth addressing |
-| ℹ | **info / setup** | Expected setup step (e.g. fresh clone with no `node_modules`) |
-| ✓ | **ok** | Check passed |
-
-### Root-cause ranking rationale
-
-Node version sits at priority 1 because a wrong Node breaks native addons, API availability, and runtime semantics — every other check below it depends on correct Node. Package manager comes second because you can't install deps without it. Missing deps block the app from starting. Env vars and Docker/ports are usually optional or easily fixed and don't cascade.
+| Symbol | Level | Meaning |
+|--------|-------|---------|
+| `✗` | **critical** | Blocker — must fix before shipping |
+| `⚠` | **warning** | Should review |
+| `✓` | **passed** | All clear |
+| `ℹ` | **info** | Expected setup step |
 
 ---
 
 ## Output Formats
 
-### Human-readable (default)
+### Human-readable (default TTY)
 
-Styled like Bun/Vite/pnpm output — no outer borders, grouped by severity, with `→ fix:` hints inline:
+Clean, minimal output styled after GitHub CLI / Vercel CLI. Shown when stdout is a TTY.
 
-```
-RunCheck  v0.1.1  ·  ./my-app
-────────────────────────────────────────────────────────────
-
-Errors
-  ❌  Node        Node v18.20.0 detected — project requires >=20
-           → fix: nvm install 20 && nvm use 20
-
-Passed
-  ✓   Package Mgr  pnpm 10.16.0 available
-  ✓   Node         No Node version requirement declared (engines.node / .nvmrc)
-
-✓ All 2 checks passed.
-```
-
-### JSON (`--json`)
+### JSON (`--json` or non-TTY)
 
 Automatically enabled when stdout is not a TTY (CI, pipes). Structure:
 
 ```json
 {
-  "targetDir": "./my-app",
-  "scannedAt": "2026-09-23T10:41:00.000Z",
+  "status": "failed",
+  "summary": {
+    "critical": 1,
+    "warnings": 4,
+    "suggestions": 0
+  },
+  "projectName": "my-app",
+  "targetDir": "/path/to/my-app",
+  "scannedAt": "2026-09-26T14:00:00.000Z",
+  "durationMs": 8420,
+  "build": {
+    "passed": true,
+    "durationMs": 18400
+  },
   "findings": [
     {
       "severity": "error",
-      "category": "node",
-      "priority": 1,
-      "message": "Node v18.20.0 detected — project requires >=20",
-      "fix": "nvm install 20 && nvm use 20"
+      "category": "security",
+      "rule": "secret",
+      "priority": 10,
+      "message": "Possible OpenAI API key detected",
+      "file": "src/config.ts",
+      "line": 18,
+      "confidence": "high",
+      "value": "sk-p••••••••••••••••",
+      "suggestion": "Move to an environment variable and rotate the key"
     }
   ]
 }
@@ -211,8 +293,8 @@ Automatically enabled when stdout is not a TTY (CI, pipes). Structure:
 
 | Code | Meaning |
 |------|---------|
-| `0` | All checks passed (no errors) |
-| `1` | One or more **error**-severity findings |
+| `0` | All checks passed (no critical issues, build passed) |
+| `1` | One or more critical findings or build failed |
 | `2` | RunCheck itself encountered an unexpected error |
 
 ---
@@ -221,31 +303,54 @@ Automatically enabled when stdout is not a TTY (CI, pipes). Structure:
 
 ```
 src/
-├── cli.ts                  # Entry point — argument parsing, local/remote dispatch
-├── types.ts                # Shared TypeScript types (Finding, ScanResult, …)
-├── scanners/
-│   ├── requirements.ts     # Reads the project: engines.node, lockfiles, .env.example, ports, …
-│   ├── environment.ts      # Probes the local machine: node -v, pm -v, docker info, …
-│   └── diff.ts             # Pure function: requirements × environment → ordered findings
-├── remote/
-│   └── git.ts              # isRemoteUrl(), cloneRepository() — shallow clone + cleanup
+├── cli.ts                      # Entry point — orchestrates all checks
+├── types.ts                    # TypeScript types (Finding, ScanResult, BuildResult…)
+│
+├── checks/                     # V1 ship-readiness checks
+│   ├── utils.ts                # walkSourceFiles(), isGeneratedFile()
+│   ├── code-quality/
+│   │   ├── todo.ts             # TODO/FIXME/HACK/XXX detector
+│   │   ├── stubs.ts            # Not-implemented & bare-return stub detector
+│   │   ├── swallowed-errors.ts # Empty catch / console-only catch detector
+│   │   ├── console-logs.ts     # Excessive console.log detector
+│   │   └── hardcoded-values.ts # Hardcoded localhost/IP detector
+│   ├── security/
+│   │   └── secrets.ts          # API key / token / credential detector
+│   ├── dependencies/
+│   │   └── unused-deps.ts      # Unused package.json dependency detector
+│   └── build/
+│       └── build-check.ts      # Runs build command, captures result
+│
+├── scanners/                   # Legacy environment health scanners (preserved)
+│   ├── requirements.ts         # Reads engines.node, lockfiles, .env.example, ports…
+│   ├── environment.ts          # Probes Node, PM, docker, ports
+│   └── diff.ts                 # Pure function: requirements × environment → findings
+│
 ├── report/
-│   └── format.ts           # renderTable() (human) + renderJson() (machine)
+│   ├── ship-report.ts          # V1 Ship Report renderer (human + JSON)
+│   └── format.ts               # Legacy renderer (backwards compat for tests)
+│
+├── remote/
+│   └── git.ts                  # isRemoteUrl(), cloneRepository()
+│
 └── fixers/
-    └── fix.ts              # --fix stub (auto-execution planned for v0.2)
+    └── fix.ts                  # --fix stub
 
 test/
-├── scanners.test.ts        # Unit tests for all diff.ts checks + requirements parsing
-├── remote.test.ts          # Unit tests for URL detection + clone logic
-├── format.test.ts          # Unit tests for the JSON and table renderers
-└── fixtures/               # Minimal project directories used in tests
+├── checks.test.ts              # Tests for all V1 check modules
+├── scanners.test.ts            # Tests for diff.ts + requirements parsing
+├── remote.test.ts              # Tests for URL detection + clone logic
+├── format.test.ts              # Tests for JSON renderer
+└── fixtures/                   # Minimal project directories used in tests
 ```
 
 **Key design decisions:**
 
 - **`diff.ts` is a pure function** — no I/O, fully unit-testable without mocking.
-- **Remote scans use `--depth 1`** — only the latest commit is cloned; temp directory is always cleaned up.
-- **Values are never read from `.env`** — only key presence is compared, preventing accidental secret leakage.
+- **Check modules are isolated** — each returns `Finding[]`, no shared state.
+- **Test directories are excluded** — `test/`, `spec/`, `__tests__/`, `fixtures/` etc. are skipped to prevent test fixtures (which intentionally contain stubs/mocks) from generating false positives.
+- **Secrets are always redacted** — RunCheck never prints more than the first 4 characters of any detected secret.
+- **Confidence levels prevent noise** — medium-confidence findings (bare literal returns) are downgraded to warnings, not errors.
 - **Non-TTY auto-switches to JSON** — safe to pipe `npx runcheck` in CI without `--json`.
 
 ---
@@ -256,7 +361,6 @@ test/
 
 - Node ≥ 20
 - pnpm ≥ 8
-- Git (required for remote URL scanning)
 
 ### Setup
 
@@ -278,77 +382,56 @@ pnpm test:watch
 # Run locally without building (scans the current directory)
 pnpm dev
 
-# Run locally against a specific path
-pnpm dev ./path/to/project
-
-# Run locally against a GitHub URL
-pnpm dev https://github.com/user/repo
-
 # Build production bundle → dist/cli.js
 pnpm build
+
+# Scan this repository itself
+node dist/cli.js
 ```
-
-### Project scripts
-
-| Script | Command | Description |
-|--------|---------|-------------|
-| `dev` | `tsx src/cli.ts` | Run from source, no build step |
-| `build` | `tsup` | Bundle to `dist/cli.js` |
-| `test` | `vitest run` | Single test run |
-| `test:watch` | `vitest` | Watch mode |
 
 ### Adding a new check
 
-1. Add the new category name to `Category` in [`src/types.ts`](src/types.ts).
-2. Add a `check<Name>()` function in [`src/scanners/diff.ts`](src/scanners/diff.ts) — returns `Finding[]`, no I/O allowed.
-3. Call it from `diffRequirementsVsEnvironment()` and assign it a priority.
-4. If the check needs new data from the machine, extend `LocalEnvironment` in `types.ts` and probe for it in [`src/scanners/environment.ts`](src/scanners/environment.ts).
-5. If the check reads project config, extend `ProjectRequirements` and parse it in [`src/scanners/requirements.ts`](src/scanners/requirements.ts).
-6. Add unit tests in [`test/scanners.test.ts`](test/scanners.test.ts).
+1. Create a new file in `src/checks/<category>/my-check.ts`
+2. Export a function that returns `Finding[]`
+3. Import and call it from `src/cli.ts` inside `runScan()`
+4. Add tests in `test/checks.test.ts`
+
+Each finding should have:
+- `severity` — `'error'` | `'warn'` | `'info'` | `'ok'`
+- `category` — use an existing category or add a new one to `types.ts`
+- `rule` — short machine-readable identifier
+- `priority` — lower = shown first
+- `file` / `line` — where the issue was found
+- `confidence` — `'low'` | `'medium'` | `'high'`
+- `suggestion` — one-line human-readable fix hint
 
 ---
 
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
-
 1. **Fork** the repository and create a branch: `git checkout -b feat/my-feature`
-2. **Make your changes.** Follow the architecture above — keep `diff.ts` pure (no I/O).
-3. **Add tests.** Every new check needs unit tests in `test/scanners.test.ts`.
+2. **Make your changes.** Keep `diff.ts` pure (no I/O).
+3. **Add tests.** Every new check needs positive cases (should trigger) and negative cases (should NOT trigger).
 4. **Run the full test suite:** `pnpm test`
-5. **Open a pull request** against `main` with a clear description of the problem and solution.
-
-### Code style
-
-- TypeScript strict mode — no `any`, no `@ts-ignore` without a comment.
-- Keep `diff.ts` pure — all I/O lives in `environment.ts`, `requirements.ts`, or `remote/git.ts`.
-- Prefer readable code over clever code; this project values maintainability.
-
-### Reporting a bug
-
-Please [open an issue](https://github.com/RohitIndurke/RunCheck/issues) and include:
-
-- RunCheck version (`npx runcheck --version`)
-- Node version and OS
-- The command you ran
-- The full output (or `--json` output)
+5. **Open a pull request** against `main`.
 
 ---
 
 ## Roadmap
 
-### v0.2
+### v1.1
 
-- [ ] `--fix` — execute suggested fix commands with a confirmation prompt
-- [ ] Windows-aware fix commands (PowerShell equivalents for `lsof`, `nvm`, etc.)
-- [ ] `engines.pnpm` / `engines.yarn` / `engines.npm` version range checking
+- [ ] `--fix` — safe automated fixes (remove unused imports, formatting)
+- [ ] Windows-aware fix commands
+- [ ] `.runcheck.json` config file (ignore patterns, severity overrides)
 
-### v0.3
+### v1.2
 
-- [ ] Monorepo-aware scanning — walk workspace packages and aggregate findings
-- [ ] Plugin API — let projects ship their own RunCheck checks in `package.json`
+- [ ] Monorepo-aware scanning — walk workspace packages
+- [ ] Placeholder/mock data detection in API routes
+- [ ] Duplicate dependency version detection
 
-### Backlog / Ideas
+### Backlog
 
 - Python, Go, Rust ecosystem support
 - `--watch` mode — re-scan on file changes
@@ -358,10 +441,11 @@ Please [open an issue](https://github.com/RohitIndurke/RunCheck/issues) and incl
 
 ## Known Limitations
 
-- **Windows fix commands** — RunCheck targets macOS/Linux first. Scanning works on Windows but suggested fix commands (e.g. `lsof`, `nvm`) are Unix-specific. Windows-aware fixes are planned for v0.2.
-- **Private repos** — Remote scanning via `git clone` requires that Git is configured with credentials for private repositories.
-- **Non-Node projects** — Python, Go, Rust, etc. are out of scope for now.
-- **Monorepo root only** — When a monorepo is detected, RunCheck scans the root only and skips per-package `.env` checks to avoid false positives.
+- **Windows fix commands** — Scanning works on Windows but suggested fix commands (e.g. `lsof`, `nvm`) are Unix-specific. Windows-aware fixes planned for v1.1.
+- **Private repos** — Remote scanning requires Git configured with credentials for private repos.
+- **Non-Node projects** — Python, Go, Rust etc. are out of scope for now.
+- **Monorepo root only** — RunCheck scans the root only in monorepos; per-package scanning coming in v1.2.
+- **Unused deps are heuristic** — Dynamic requires, config-only packages, and CLI-invoked binaries may appear "unused" even when they're not. Review before removing.
 
 ---
 

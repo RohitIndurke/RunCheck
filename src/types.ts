@@ -2,7 +2,20 @@
 
 export type Severity = 'error' | 'warn' | 'ok' | 'info';
 
-export type Category = 'node' | 'pm' | 'ambiguous-pm' | 'deps' | 'env' | 'docker' | 'ports';
+/** Legacy environment-health categories (preserved for backwards compat) */
+export type EnvCategory = 'node' | 'pm' | 'ambiguous-pm' | 'deps' | 'env' | 'docker' | 'ports';
+
+/** V1 ship-readiness categories */
+export type ShipCategory =
+  | 'code-quality'
+  | 'security'
+  | 'build'
+  | 'unused-deps';
+
+export type Category = EnvCategory | ShipCategory;
+
+/** Confidence level for heuristic detectors */
+export type Confidence = 'low' | 'medium' | 'high';
 
 /** A single diagnostic finding produced by the diff scanner. */
 export interface Finding {
@@ -16,6 +29,19 @@ export interface Finding {
   fix?: string;
   /** Lower number = shown first in output */
   priority: number;
+  // ── V1 extensions (optional — not set by legacy diff.ts checks) ──
+  /** Source file path, relative to project root */
+  file?: string;
+  /** 1-indexed line number */
+  line?: number;
+  /** Detector confidence */
+  confidence?: Confidence;
+  /** Short human-readable suggestion */
+  suggestion?: string;
+  /** Partially-redacted value (e.g. for secrets) */
+  value?: string;
+  /** Sub-category label shown in the report (e.g. "TODO", "Swallowed error") */
+  rule?: string;
 }
 
 /** Everything the requirements scanner extracts from a target project directory. */
@@ -77,4 +103,19 @@ export interface ScanResult {
   targetDir: string;
   findings: Finding[];
   scannedAt: string;
+  // ── V1 extensions ──
+  /** Human-readable project name (basename of targetDir) */
+  projectName?: string;
+  /** Total wall-clock duration in milliseconds */
+  durationMs?: number;
+  /** Build check result */
+  buildResult?: BuildResult;
+}
+
+/** Result of running the project build command */
+export interface BuildResult {
+  passed: boolean;
+  durationMs: number;
+  /** Captured error output (first N lines) */
+  errorSummary?: string;
 }

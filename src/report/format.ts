@@ -1,30 +1,27 @@
 /**
- * format.ts
+ * report/format.ts
  *
- * Renders a ScanResult to the terminal (modern line-based renderer)
- * or as machine-readable JSON.
+ * Preserved for backwards compatibility (test/format.test.ts imports from here).
+ * The V1 human-readable renderer is in ship-report.ts.
  *
- * The human-readable renderer is styled like Bun/Vite/pnpm output:
- *   - No outer borders
- *   - Status glyph + colored category label + message, one per line
- *   - Grouped by severity: Errors → Warnings → Passed
- *   - Indented "→ fix:" line directly under each actionable finding
- *   - Compact summary line at the end
+ * renderJson now delegates to the V1 renderer which includes a proper status wrapper.
+ * renderTable is kept as a minimal fallback (not used by the V1 CLI).
  */
 
 import pc from 'picocolors';
 import type { Finding, ScanResult, Severity } from '../types.js';
+export { renderJson } from './ship-report.js';
 
 // ─── Icons & colors ───────────────────────────────────────────────────────────
 
 const ICON: Record<Severity, string> = {
-  error: '❌',
+  error: '✗ ',
   warn:  '⚠ ',
   ok:    '✓ ',
   info:  'ℹ ',
 };
 
-const CATEGORY_LABEL: Record<Finding['category'], string> = {
+const CATEGORY_LABEL: Partial<Record<Finding['category'], string>> = {
   node:           'Node      ',
   pm:             'Package Mgr',
   'ambiguous-pm': 'Lockfiles  ',
@@ -34,7 +31,7 @@ const CATEGORY_LABEL: Record<Finding['category'], string> = {
   ports:          'Ports      ',
 };
 
-// ─── Human-readable renderer ──────────────────────────────────────────────────
+// ─── Human-readable renderer (legacy — V1 uses renderShipReport) ──────────────
 
 export function renderTable(result: ScanResult): string {
   const { findings, targetDir } = result;
@@ -46,18 +43,16 @@ export function renderTable(result: ScanResult): string {
 
   const lines: string[] = [];
 
-  // ── Banner ──────────────────────────────────────────────────────────────────
   lines.push('');
   lines.push(
     pc.bold('RunCheck') +
-    pc.dim('  v0.1.1') +
+    pc.dim(`  v1.0.0`) +
     pc.dim('  ·  ') +
     pc.dim(targetDir),
   );
   lines.push(pc.dim('─'.repeat(60)));
   lines.push('');
 
-  // ── Section renderer ────────────────────────────────────────────────────────
   function renderSection(
     sectionFindings: Finding[],
     label: string,
@@ -65,20 +60,16 @@ export function renderTable(result: ScanResult): string {
     dimItems: boolean,
   ): void {
     if (sectionFindings.length === 0) return;
-
     lines.push(pc.bold(label));
-
     for (const f of sectionFindings) {
-      const icon     = ICON[f.severity];
-      const cat      = pc.dim(CATEGORY_LABEL[f.category] ?? f.category.padEnd(11));
-      const msg      = dimItems ? pc.dim(f.message) : colorFn(f.message);
+      const icon = ICON[f.severity];
+      const cat = pc.dim((CATEGORY_LABEL[f.category] ?? f.category).padEnd(11));
+      const msg  = dimItems ? pc.dim(f.message) : colorFn(f.message);
       lines.push(`  ${icon}  ${cat}  ${msg}`);
-
       if (f.fix) {
         lines.push(`           ${pc.dim('→ fix: ')}${pc.dim(f.fix)}`);
       }
     }
-
     lines.push('');
   }
 
@@ -87,7 +78,6 @@ export function renderTable(result: ScanResult): string {
   renderSection(warnings, 'Warnings', pc.yellow, false);
   renderSection(passed,   'Passed',   pc.green,  true);
 
-  // ── Summary ──────────────────────────────────────────────────────────────────
   const errCount  = errors.length;
   const warnCount = warnings.length;
   const infoCount = info.length;
@@ -101,17 +91,10 @@ export function renderTable(result: ScanResult): string {
     if (infoCount) parts.push(pc.cyan(`${infoCount} setup action${infoCount > 1 ? 's' : ''}`));
     if (warnCount) parts.push(pc.yellow(`${warnCount} warning${warnCount > 1 ? 's' : ''}`));
     if (okCount)   parts.push(pc.green(`${okCount} passed`));
-
     const summary = parts.join(pc.dim(' · '));
     lines.push(errCount > 0 ? pc.bold(summary) : summary);
   }
 
   lines.push('');
   return lines.join('\n');
-}
-
-// ─── JSON output ──────────────────────────────────────────────────────────────
-
-export function renderJson(result: ScanResult): string {
-  return JSON.stringify(result, null, 2);
 }
